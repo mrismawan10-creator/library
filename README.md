@@ -23,6 +23,20 @@ npm run dev
 | `npm run start` | Serve the production build |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | `tsc --noEmit` |
+| `npm run db:login` | Authenticate the Supabase CLI |
+| `npm run db:link` | Link this repo to the hosted Supabase project |
+| `npm run db:push` | Apply pending migrations |
+| `npm run db:status` | Compare local and remote migration state |
+
+## Database
+
+Schema lives in `supabase/migrations/` and is applied with the Supabase CLI:
+
+```bash
+npm run db:login
+npm run db:link -- --project-ref <your-project-ref>
+npm run db:push
+```
 
 ## Environment
 

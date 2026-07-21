@@ -21,6 +21,9 @@ Source of truth: `docs/PRD.md` (FR-01..FR-20, schema, endpoints, priorities). Ba
 - `npm run start` — serve the production build
 - `npm run lint` — ESLint (`eslint .`; `next lint` is deprecated in Next 15 and removed in 16)
 - `npm run typecheck` — `tsc --noEmit`
+- `npm run db:login` / `db:link` — authenticate the Supabase CLI and link this repo to the hosted project
+- `npm run db:push` — apply pending migrations to the linked project
+- `npm run db:status` — list local vs remote migration state
 
 Keep this section updated as scripts are added. Run lint + typecheck before declaring any task done.
 
@@ -50,7 +53,7 @@ Keep this section updated as scripts are added. Run lint + typecheck before decl
 
 ## Database
 
-Schema per PRD §7: `prompts`, `categories`, `tags`, `prompt_tags`, `app_settings` (singleton row, read-or-create). Do NOT create `prompt_artifacts` yet (future phase). Schema changes happen only through migrations in `supabase/migrations/`.
+Schema per PRD §7: `prompts`, `categories`, `tags`, `prompt_tags`, `app_settings` (singleton row, read-or-create). Do NOT create `prompt_artifacts` yet (future phase). Schema changes happen only through migrations in `supabase/migrations/`, named in Supabase CLI format (`<YYYYMMDDHHmmss>_name.sql`) and applied with `npm run db:push`. Never edit an already-applied migration; add a new one.
 
 Required constraints/indexes beyond the PRD text:
 
