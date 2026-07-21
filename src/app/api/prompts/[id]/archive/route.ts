@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { uuidSchema } from "@/lib/schemas";
+import { NotFoundError } from "@/lib/data/errors";
 import { archivePrompt } from "@/lib/data/prompts";
 import { handleApiError } from "@/lib/api/response";
 
@@ -10,7 +11,8 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const prompt = await archivePrompt(uuidSchema.parse(id));
+    if (!uuidSchema.safeParse(id).success) throw new NotFoundError("Prompt not found.");
+    const prompt = await archivePrompt(id);
     return NextResponse.json({ prompt });
   } catch (error) {
     return handleApiError(error);

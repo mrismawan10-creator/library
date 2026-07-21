@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { promptUpdateSchema, uuidSchema } from "@/lib/schemas";
+import { NotFoundError } from "@/lib/data/errors";
 import { deletePrompt, getPrompt, updatePrompt } from "@/lib/data/prompts";
 import { handleApiError, readJson } from "@/lib/api/response";
 
@@ -12,7 +13,8 @@ type Context = { params: Promise<{ id: string }> };
 export async function GET(_request: Request, { params }: Context) {
   try {
     const { id } = await params;
-    const prompt = await getPrompt(uuidSchema.parse(id));
+    if (!uuidSchema.safeParse(id).success) throw new NotFoundError("Prompt not found.");
+    const prompt = await getPrompt(id);
     return NextResponse.json({ prompt });
   } catch (error) {
     return handleApiError(error);
@@ -23,8 +25,9 @@ export async function GET(_request: Request, { params }: Context) {
 export async function PATCH(request: Request, { params }: Context) {
   try {
     const { id } = await params;
+    if (!uuidSchema.safeParse(id).success) throw new NotFoundError("Prompt not found.");
     const input = promptUpdateSchema.parse(await readJson(request));
-    const prompt = await updatePrompt(uuidSchema.parse(id), input);
+    const prompt = await updatePrompt(id, input);
     return NextResponse.json({ prompt });
   } catch (error) {
     return handleApiError(error);
@@ -35,7 +38,8 @@ export async function PATCH(request: Request, { params }: Context) {
 export async function DELETE(_request: Request, { params }: Context) {
   try {
     const { id } = await params;
-    await deletePrompt(uuidSchema.parse(id));
+    if (!uuidSchema.safeParse(id).success) throw new NotFoundError("Prompt not found.");
+    await deletePrompt(id);
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     return handleApiError(error);
