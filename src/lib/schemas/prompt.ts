@@ -97,6 +97,22 @@ export const promptCreateSchema = z.object({
  */
 export const promptUpdateSchema = promptCreateSchema.partial();
 
+/**
+ * What the prompt form binds to. Same rules as `promptCreateSchema`, except
+ * tags are a single free-text field there and get split into names on submit.
+ * Keeping it derived means the form can never drift from the API contract.
+ */
+export const promptFormSchema = promptCreateSchema
+  .omit({ tags: true, is_favorite: true, is_featured: true })
+  .extend({
+    description: z.string(),
+    ai_model: z.string(),
+    category_id: z.string(),
+    tags_input: z.string(),
+  });
+
+export type PromptFormValues = z.input<typeof promptFormSchema>;
+
 export type PromptRow = z.infer<typeof promptRowSchema>;
 export type PromptCard = z.infer<typeof promptCardSchema>;
 export type PromptCreate = z.infer<typeof promptCreateSchema>;

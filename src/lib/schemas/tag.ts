@@ -39,5 +39,21 @@ export const tagNameListSchema = z
   })
   .pipe(z.array(tagNameSchema).max(25, "A prompt can carry up to 25 tags."));
 
+/**
+ * Splits the form's free-text tag field into names. Commas and newlines both
+ * separate, so pasting a list works as well as typing one.
+ */
+export function parseTagsInput(value: string): string[] {
+  return value
+    .split(/[,\n]/)
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+}
+
+/** Renders tag names back into the form field. */
+export function formatTagsInput(names: string[]): string {
+  return names.join(", ");
+}
+
 export type TagRow = z.infer<typeof tagRowSchema>;
 export type TagNameList = z.infer<typeof tagNameListSchema>;
