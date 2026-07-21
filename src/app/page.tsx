@@ -1,10 +1,22 @@
-export default function Home() {
+import { LibraryBig } from "lucide-react";
+import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/layout/page-header";
+
+/**
+ * Home catalog (FR-01). The hero and category rows arrive in Milestone 3; until
+ * there is data, this is the PRD §11 empty state.
+ */
+export default function HomePage() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-3 px-6 text-center">
-      <h1 className="text-3xl font-semibold">Prompt Library Dashboard</h1>
-      <p className="text-muted-foreground max-w-md text-sm">
-        Foundation in progress. The catalog arrives in Milestone 3.
-      </p>
-    </main>
+    <>
+      <PageHeader title="Home" />
+      <EmptyState
+        icon={LibraryBig}
+        title="Your prompt library is empty."
+        description="Save your first prompt and it will show up here, in Recently Added, and in its category row."
+        actionLabel="Add your first prompt"
+        actionHref="/prompts/new"
+      />
+    </>
   );
 }
