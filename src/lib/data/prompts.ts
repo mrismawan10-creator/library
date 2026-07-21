@@ -2,7 +2,6 @@ import "server-only";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
-  EXCERPT_LENGTH,
   type PromptCard,
   type PromptCreate,
   type PromptRow,
@@ -11,6 +10,7 @@ import {
   type TagRow,
 } from "@/lib/schemas";
 import { NotFoundError, toDataError } from "./errors";
+import { CARD_COLUMNS, toCards } from "./cards";
 import { getPromptTags, syncPromptTags } from "./tags";
 
 /**
@@ -21,40 +21,6 @@ import { getPromptTags, syncPromptTags } from "./tags";
  * detail page opens or a copy happens. A card excerpt must never be able to
  * reach the clipboard.
  */
-
-/** Columns cards need, with the excerpt standing in for the full text. */
-const CARD_COLUMNS = `
-  id,
-  title,
-  excerpt:prompt_text,
-  category_id,
-  output_type,
-  ai_model,
-  cover_path,
-  cover_source,
-  is_favorite,
-  is_featured,
-  status,
-  usage_count,
-  last_used_at,
-  created_at,
-  updated_at,
-  categories ( name, slug )
-`;
-
-type CardQueryRow = Omit<PromptCard, "category_name" | "category_slug"> & {
-  categories: { name: string; slug: string } | null;
-};
-
-function toCard(row: CardQueryRow): PromptCard {
-  const { categories, ...rest } = row;
-  return {
-    ...rest,
-    excerpt: row.excerpt.slice(0, EXCERPT_LENGTH),
-    category_name: categories?.name ?? null,
-    category_slug: categories?.slug ?? null,
-  };
-}
 
 export type PromptWithTags = PromptRow & {
   tags: TagRow[];
@@ -94,7 +60,7 @@ export async function listPrompts(
   const { data, error } = await query;
   if (error) throw toDataError(error);
 
-  return ((data ?? []) as unknown as CardQueryRow[]).map(toCard);
+  return toCards(data);
 }
 
 /** A single prompt with its full text, tags, and category (FR-05). */
@@ -206,6 +172,77 @@ export async function restorePrompt(id: string): Promise<PromptRow> {
 
   if (error) throw toDataError(error);
   if (!data) throw new NotFoundError("Prompt not found.");
+  return data as PromptRow;
+}
+
+/**
+ * Records a successful copy (FR-07): usage_count + 1 and last_used_at = now().
+ *
+ * Deliberately does not touch `updated_at` — copying is not editing, and the
+ * detail page shows both. The increment runs in SQL so two quick copies cannot
+ * read-modify-write over each other.
+ */
+export async function recordCopyEvent(id: string): Promise<void> {
+  const { data, error } = await getSupabaseAdmin().rpc("record_copy_event", {
+    target: id,
+  });
+
+  if (error) throw toDataError(error);
+  if (!data) throw new NotFoundError("Prompt not found.");
+}
+
+/** Favorite toggle (FR-13). Works on archived prompts too; they just stay hidden. */
+export async function setFavorite(
+  id: string,
+  value: boolean,
+): Promise<PromptRow> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("prompts")
+    .update({ is_favorite: value })
+    .eq("id", id)
+    .select("*")
+    .maybeSingle();
+
+  if (error) throw toDataError(error);
+  if (!data) throw new NotFoundError("Prompt not found.");
+  return data as PromptRow;
+}
+
+/**
+ * Featured toggle (FR-14).
+ *
+ * Setting one goes through the `set_featured_prompt` function so the un-feature
+ * and the feature happen in a single transaction; clearing one is a plain
+ * update because it cannot violate the single-featured rule.
+ */
+export async function setFeatured(
+  id: string,
+  value: boolean,
+): Promise<PromptRow> {
+  const supabase = getSupabaseAdmin();
+
+  if (!value) {
+    const { data, error } = await supabase
+      .from("prompts")
+      .update({ is_featured: false })
+      .eq("id", id)
+      .select("*")
+      .maybeSingle();
+
+    if (error) throw toDataError(error);
+    if (!data) throw new NotFoundError("Prompt not found.");
+    return data as PromptRow;
+  }
+
+  const { data, error } = await supabase.rpc("set_featured_prompt", {
+    target: id,
+  });
+
+  if (error) {
+    if (error.code === "P0002") throw new NotFoundError("Prompt not found.");
+    throw toDataError(error);
+  }
+
   return data as PromptRow;
 }
 

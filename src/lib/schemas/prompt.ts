@@ -88,14 +88,23 @@ export const promptCreateSchema = z.object({
   ai_model: optionalText,
   tags: tagNameListSchema.optional(),
   is_favorite: z.boolean().optional(),
-  is_featured: z.boolean().optional(),
 });
 
 /**
  * Every field is optional so autosave can PATCH just what changed (FR-06).
- * `status` is excluded on purpose: archive and restore have their own endpoints.
+ *
+ * Three fields are deliberately unreachable here. `status` belongs to the
+ * archive and restore endpoints; `is_favorite` to the favorite endpoint; and
+ * `is_featured` to the RPC that swaps the featured prompt inside a
+ * transaction. Letting a generic PATCH set featured would bypass that
+ * transaction and break the one-featured rule (FR-14).
  */
-export const promptUpdateSchema = promptCreateSchema.partial();
+export const promptUpdateSchema = promptCreateSchema
+  .omit({ is_favorite: true })
+  .partial();
+
+/** Body for POST /api/prompts/:id/favorite and .../feature. */
+export const promptFlagSchema = z.object({ value: z.boolean() });
 
 /**
  * What the prompt form binds to. Same rules as `promptCreateSchema`, except
@@ -103,7 +112,7 @@ export const promptUpdateSchema = promptCreateSchema.partial();
  * Keeping it derived means the form can never drift from the API contract.
  */
 export const promptFormSchema = promptCreateSchema
-  .omit({ tags: true, is_favorite: true, is_featured: true })
+  .omit({ tags: true, is_favorite: true })
   .extend({
     description: z.string(),
     ai_model: z.string(),
