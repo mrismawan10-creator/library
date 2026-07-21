@@ -1,32 +1,44 @@
-import { LibraryBig } from "lucide-react";
+import { Suspense } from "react";
+import { LibraryBig, SearchX } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
 import { PromptList } from "@/components/prompts/prompt-list";
+import { SearchInput } from "@/components/discovery/search-input";
+import {
+  ActiveFilterChips,
+  FilterControls,
+} from "@/components/discovery/filter-controls";
 import { listPrompts } from "@/lib/data/prompts";
 import { listCategories } from "@/lib/data/categories";
+import { listTags } from "@/lib/data/tags";
+import { hasActiveFilters, promptQuerySchema } from "@/lib/schemas";
 
 export const metadata = { title: "All Prompts" };
 
-/** Always reflects the current database rather than a build-time snapshot. */
 export const dynamic = "force-dynamic";
 
 /**
- * FR-01. `?category=` is what the catalog's "See all" links point at; the full
- * filter and sort UI arrives in Milestone 4.
+ * Search, filter, and sort (FR-11, FR-12).
+ *
+ * The query lives entirely in the URL, so this stays a server component: every
+ * result set is rendered on the server and is shareable as a link.
  */
 export default async function PromptsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { category } = await searchParams;
+  const raw = await searchParams;
+  const query = promptQuerySchema.parse(raw);
 
-  const [prompts, categories] = await Promise.all([
-    listPrompts({ status: "active", categorySlug: category }),
-    category ? listCategories() : Promise.resolve([]),
+  const [prompts, categories, tags] = await Promise.all([
+    listPrompts({ query }),
+    listCategories(),
+    listTags(),
   ]);
 
-  const activeCategory = categories.find((item) => item.slug === category);
+  const filtered = hasActiveFilters(query);
+  const activeCategory = categories.find((item) => item.slug === query.category);
 
   return (
     <>
@@ -34,20 +46,50 @@ export default async function PromptsPage({
         title={activeCategory ? activeCategory.name : "All Prompts"}
         description={
           activeCategory
-            ? activeCategory.description ?? undefined
-            : "Every active prompt, newest first."
+            ? (activeCategory.description ?? undefined)
+            : "Search across titles, prompt text, descriptions, tags, and models."
         }
       />
+
+      <div className="mb-6 space-y-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <Suspense fallback={null}>
+            <SearchInput />
+          </Suspense>
+          <Suspense fallback={null}>
+            <FilterControls categories={categories} tags={tags} />
+          </Suspense>
+        </div>
+        <Suspense fallback={null}>
+          <ActiveFilterChips />
+        </Suspense>
+      </div>
+
       {prompts.length === 0 ? (
-        <EmptyState
-          icon={LibraryBig}
-          title={activeCategory ? "Nothing in this category yet." : "No prompts yet."}
-          description="Prompts you save will be listed here."
-          actionLabel="Add your first prompt"
-          actionHref="/prompts/new"
-        />
+        filtered ? (
+          <EmptyState
+            icon={SearchX}
+            title="No prompts match your search."
+            description="Try a different word, remove a filter, or add a new prompt."
+            actionLabel="Add a prompt"
+            actionHref="/prompts/new"
+          />
+        ) : (
+          <EmptyState
+            icon={LibraryBig}
+            title="No prompts yet."
+            description="Prompts you save will be listed here."
+            actionLabel="Add your first prompt"
+            actionHref="/prompts/new"
+          />
+        )
       ) : (
-        <PromptList prompts={prompts} />
+        <>
+          <p className="text-muted-foreground mb-4 text-sm" aria-live="polite">
+            {prompts.length} {prompts.length === 1 ? "prompt" : "prompts"}
+          </p>
+          <PromptList prompts={prompts} query={query.q} />
+        </>
       )}
     </>
   );

@@ -2,15 +2,15 @@ import "server-only";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import {
+  normalizeOutputTypes,
   type PromptCard,
   type PromptCreate,
+  type PromptQuery,
   type PromptRow,
-  type PromptStatus,
   type PromptUpdate,
   type TagRow,
 } from "@/lib/schemas";
 import { NotFoundError, toDataError } from "./errors";
-import { CARD_COLUMNS, toCards } from "./cards";
 import { getPromptTags, syncPromptTags } from "./tags";
 
 /**
@@ -29,63 +29,66 @@ export type PromptWithTags = PromptRow & {
 };
 
 export type ListPromptsOptions = {
-  status?: PromptStatus;
-  favoritesOnly?: boolean;
-  /** Category slug, from the catalog See all links. */
-  categorySlug?: string;
+  query?: PromptQuery;
   limit?: number;
+  offset?: number;
 };
 
 /**
- * Prompts for list surfaces, newest first.
+ * Every list surface goes through `search_prompts` (FR-11, FR-12): all prompts,
+ * favorites, archived, category pages, search results.
  *
- * Note the excerpt is trimmed in JS rather than with left(prompt_text, 240) in
- * SQL: PostgREST cannot express a function call in a select alias, and pushing
- * it through an RPC for M2 would buy nothing at this scale. The full text still
- * crosses the wire here — this is a known M4 optimisation, tracked against
- * PRD §14, and it never reaches the client because only the mapped card does.
+ * The function cuts the excerpt with left(prompt_text, 240) in SQL, so full
+ * prompt text never leaves the database for a list query (PRD §14). Slugs are
+ * resolved to ids first because the function filters on ids.
  */
 export async function listPrompts(
   options: ListPromptsOptions = {},
 ): Promise<PromptCard[]> {
-  const {
-    status = "active",
-    favoritesOnly = false,
-    categorySlug,
-    limit = 100,
-  } = options;
-
+  const { query = {}, limit = 100, offset = 0 } = options;
   const supabase = getSupabaseAdmin();
 
-  // Resolved to an id first: filtering on an embedded column would need an
-  // inner join, and without one PostgREST returns every row with the relation
-  // nulled instead of filtering.
   let categoryId: string | null = null;
-  if (categorySlug) {
+  if (query.category) {
     const { data, error } = await supabase
       .from("categories")
       .select("id")
-      .eq("slug", categorySlug)
+      .eq("slug", query.category)
       .maybeSingle();
     if (error) throw toDataError(error);
-    if (!data) return [];
+    if (!data) return []; // unknown category: no results, not an error
     categoryId = (data as { id: string }).id;
   }
 
-  let query = supabase
-    .from("prompts")
-    .select(CARD_COLUMNS)
-    .eq("status", status)
-    .order("created_at", { ascending: false })
-    .limit(limit);
+  let tagIds: string[] | null = null;
+  if (query.tag?.length) {
+    const { data, error } = await supabase
+      .from("tags")
+      .select("id")
+      .in("slug", query.tag);
+    if (error) throw toDataError(error);
+    const ids = ((data ?? []) as { id: string }[]).map((row) => row.id);
+    // An unknown tag cannot match anything, so neither can the combination.
+    if (ids.length !== query.tag.length) return [];
+    tagIds = ids;
+  }
 
-  if (favoritesOnly) query = query.eq("is_favorite", true);
-  if (categoryId) query = query.eq("category_id", categoryId);
+  const { data, error } = await supabase.rpc("search_prompts", {
+    p_q: query.q ?? null,
+    p_category_id: categoryId,
+    p_tag_ids: tagIds,
+    p_output_types: normalizeOutputTypes(query.type) ?? null,
+    p_ai_model: query.model ?? null,
+    p_favorite: query.favorite ?? null,
+    p_featured: query.featured ?? null,
+    p_status: query.status ?? "active",
+    p_sort: query.sort ?? "newest",
+    p_limit: limit,
+    p_offset: offset,
+  });
 
-  const { data, error } = await query;
   if (error) throw toDataError(error);
-
-  return toCards(data);
+  return (data ?? []) as PromptCard[];
 }
 
 /** A single prompt with its full text, tags, and category (FR-05). */

@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 /** FR-15. Archived prompts stay restorable and never reach home or search. */
 export default async function ArchivedPage() {
-  const prompts = await listPrompts({ status: "archived" });
+  const prompts = await listPrompts({ query: { status: "archived" } });
 
   return (
     <>

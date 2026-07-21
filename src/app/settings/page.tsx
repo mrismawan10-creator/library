@@ -1,16 +1,30 @@
 import { PageHeader } from "@/components/layout/page-header";
+import { TagManager } from "@/components/settings/tag-manager";
+import { listTagsWithCounts } from "@/lib/data/tags";
 
 export const metadata = { title: "Settings" };
 
-/** Feature flags, tag cleanup (FR-10), and export live here from Milestone 4. */
-export default function SettingsPage() {
+export const dynamic = "force-dynamic";
+
+export default async function SettingsPage() {
+  const tags = await listTagsWithCounts();
+
   return (
     <>
       <PageHeader title="Settings" />
-      <p className="text-muted-foreground text-sm">
-        Tag cleanup, feature flags, and backup options arrive in later
-        milestones.
-      </p>
+
+      <section aria-labelledby="tags-heading" className="space-y-4">
+        <div>
+          <h2 id="tags-heading" className="text-lg font-semibold">
+            Tags
+          </h2>
+          <p className="text-muted-foreground mt-1 max-w-prose text-sm">
+            Renaming or deleting a tag never changes a prompt — only the tag and
+            its links.
+          </p>
+        </div>
+        <TagManager tags={tags} />
+      </section>
     </>
   );
 }

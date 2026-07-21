@@ -2,7 +2,7 @@ import "server-only";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
 import { slugify, type TagRow } from "@/lib/schemas";
-import { toDataError } from "./errors";
+import { ConflictError, NotFoundError, toDataError } from "./errors";
 
 /**
  * Tag handling (FR-10).
@@ -117,6 +117,86 @@ export async function syncPromptTags(
   }
 }
 
+export type TagWithCount = TagRow & { prompt_count: number };
+
+/** Every tag with how many prompts use it, for the Settings screen (FR-10). */
+export async function listTagsWithCounts(): Promise<TagWithCount[]> {
+  const supabase = getSupabaseAdmin();
+
+  const [tagsResult, linksResult] = await Promise.all([
+    supabase.from("tags").select("*").order("name", { ascending: true }),
+    supabase.from("prompt_tags").select("tag_id"),
+  ]);
+
+  if (tagsResult.error) throw toDataError(tagsResult.error);
+  if (linksResult.error) throw toDataError(linksResult.error);
+
+  const counts = new Map<string, number>();
+  for (const row of (linksResult.data ?? []) as { tag_id: string }[]) {
+    counts.set(row.tag_id, (counts.get(row.tag_id) ?? 0) + 1);
+  }
+
+  return ((tagsResult.data ?? []) as TagRow[]).map((tag) => ({
+    ...tag,
+    prompt_count: counts.get(tag.id) ?? 0,
+  }));
+}
+
+/**
+ * Renames a tag. The slug is regenerated so case-insensitive uniqueness keeps
+ * holding; a collision surfaces as a conflict rather than merging silently.
+ */
+export async function renameTag(id: string, name: string): Promise<TagRow> {
+  const trimmed = name.trim();
+  const slug = slugify(trimmed);
+  if (!slug) throw new ConflictError("That name cannot be turned into a tag.");
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("tags")
+    .update({ name: trimmed, slug })
+    .eq("id", id)
+    .select("*")
+    .maybeSingle();
+
+  if (error) throw toDataError(error);
+  if (!data) throw new NotFoundError("Tag not found.");
+  return data as TagRow;
+}
+
+/**
+ * Deletes a tag. Prompt rows are untouched (FR-10) — only the links go, through
+ * the cascade on prompt_tags.
+ */
+export async function deleteTag(id: string): Promise<void> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("tags")
+    .delete()
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
+
+  if (error) throw toDataError(error);
+  if (!data) throw new NotFoundError("Tag not found.");
+}
+
+/** Removes every tag no prompt uses. Returns how many were removed. */
+export async function deleteUnusedTags(): Promise<number> {
+  const tags = await listTagsWithCounts();
+  const unused = tags.filter((tag) => tag.prompt_count === 0);
+  if (unused.length === 0) return 0;
+
+  const { error } = await getSupabaseAdmin()
+    .from("tags")
+    .delete()
+    .in(
+      "id",
+      unused.map((tag) => tag.id),
+    );
+
+  if (error) throw toDataError(error);
+  return unused.length;
+}
+
 /** Tag names attached to a prompt, alphabetical. */
 export async function getPromptTags(promptId: string): Promise<TagRow[]> {
   const { data, error } = await getSupabaseAdmin()
@@ -131,4 +211,15 @@ export async function getPromptTags(promptId: string): Promise<TagRow[]> {
     .map((row) => row.tags)
     .filter((tag): tag is TagRow => tag !== null)
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** All tags, alphabetical — used by the filter panel. */
+export async function listTags(): Promise<TagRow[]> {
+  const { data, error } = await getSupabaseAdmin()
+    .from("tags")
+    .select("*")
+    .order("name", { ascending: true });
+
+  if (error) throw toDataError(error);
+  return (data ?? []) as TagRow[];
 }

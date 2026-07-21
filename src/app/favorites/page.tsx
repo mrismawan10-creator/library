@@ -10,7 +10,9 @@ export const dynamic = "force-dynamic";
 
 /** FR-13. Archived favorites never appear here. */
 export default async function FavoritesPage() {
-  const prompts = await listPrompts({ status: "active", favoritesOnly: true });
+  const prompts = await listPrompts({
+    query: { status: "active", favorite: true },
+  });
 
   return (
     <>
@@ -22,7 +24,7 @@ export default async function FavoritesPage() {
         <EmptyState
           icon={Heart}
           title="No favorites yet."
-          description="Marking favorites arrives with the catalog in Milestone 3."
+          description="Tap the heart on any prompt and it will appear here."
           actionLabel="Browse prompts"
           actionHref="/prompts"
         />

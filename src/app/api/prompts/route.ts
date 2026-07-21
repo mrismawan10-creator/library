@@ -1,21 +1,28 @@
 import { NextResponse } from "next/server";
-import { promptCreateSchema, promptStatusSchema } from "@/lib/schemas";
+import { promptCreateSchema, promptQuerySchema } from "@/lib/schemas";
 import { createPrompt, listPrompts } from "@/lib/data/prompts";
 import { handleApiError, readJson } from "@/lib/api/response";
 
-/** GET /api/prompts — list surfaces (PRD §9). Excerpts only, never full text. */
+/**
+ * GET /api/prompts — search, filter, and sort (FR-11, FR-12).
+ * Excerpts only, never full text.
+ */
 export async function GET(request: Request) {
   try {
     const params = new URL(request.url).searchParams;
-    const status = promptStatusSchema
-      .catch("active")
-      .parse(params.get("status") ?? "active");
-
-    const prompts = await listPrompts({
-      status,
-      favoritesOnly: params.get("favorite") === "true",
+    const query = promptQuerySchema.parse({
+      q: params.get("q") ?? undefined,
+      category: params.get("category") ?? undefined,
+      tag: params.getAll("tag"),
+      type: params.getAll("type"),
+      model: params.get("model") ?? undefined,
+      favorite: params.get("favorite") ?? undefined,
+      featured: params.get("featured") ?? undefined,
+      status: params.get("status") ?? undefined,
+      sort: params.get("sort") ?? undefined,
     });
 
+    const prompts = await listPrompts({ query });
     return NextResponse.json({ prompts });
   } catch (error) {
     return handleApiError(error);
