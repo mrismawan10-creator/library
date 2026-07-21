@@ -7,7 +7,8 @@ Source of truth: `docs/PRD.md` (FR-01..FR-20, schema, endpoints, priorities). Ba
 ## Stack (locked)
 
 - Next.js (App Router) + TypeScript (strict). Server Components by default; `"use client"` only where interactivity is required.
-- Tailwind CSS.
+- Tailwind CSS v4, with shadcn/ui (New York style) on Radix primitives.
+- UI libraries in use: sonner (toasts), vaul (mobile sheets/drawers), embla-carousel-react (horizontal category rows), react-hook-form + @hookform/resolvers, lucide-react, date-fns.
 - Supabase: PostgreSQL + Storage, accessed ONLY from server code.
 - Zod for validation on client and server (shared schemas, e.g. `lib/schemas/`).
 - sharp (server-side) for cover processing.
@@ -17,7 +18,8 @@ Source of truth: `docs/PRD.md` (FR-01..FR-20, schema, endpoints, priorities). Ba
 
 - `npm run dev` — start dev server
 - `npm run build` — production build
-- `npm run lint` — ESLint
+- `npm run start` — serve the production build
+- `npm run lint` — ESLint (`eslint .`; `next lint` is deprecated in Next 15 and removed in 16)
 - `npm run typecheck` — `tsc --noEmit`
 
 Keep this section updated as scripts are added. Run lint + typecheck before declaring any task done.
