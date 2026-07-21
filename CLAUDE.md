@@ -1,416 +1,107 @@
-# CLAUDE.md - CodeGuide Starter Kit
+# CLAUDE.md
 
-This file contains essential context about the project structure, technologies, and conventions to help Claude understand and work effectively within this codebase.
+Prompt Library Dashboard. Personal, single-user, responsive web app: a streaming-catalog-style visual library for storing, finding, copying, and editing AI prompts. AI-agnostic: the app never executes prompts. No authentication in MVP; privacy comes from private deployment.
 
-## Project Overview
+Source of truth: `docs/PRD.md` (FR-01..FR-20, schema, endpoints, priorities). Background: `docs/pra-kickoff.md`. If these files are missing, ask the owner for them before making product decisions.
 
-**CodeGuide Starter Kit** is a modern Next.js starter template featuring authentication, database integration, AI capabilities, and a comprehensive UI component system.
+## Stack (locked)
 
-### Core Technologies
+- Next.js (App Router) + TypeScript (strict). Server Components by default; `"use client"` only where interactivity is required.
+- Tailwind CSS.
+- Supabase: PostgreSQL + Storage, accessed ONLY from server code.
+- Zod for validation on client and server (shared schemas, e.g. `lib/schemas/`).
+- sharp (server-side) for cover processing.
+- Deployment: local first. When deploying: Vercel + Basic Auth middleware gated by env vars. Public deployment without protection is forbidden.
 
-- **Framework**: Next.js 15 with App Router (`/src/app` directory structure)
-- **Language**: TypeScript with strict mode enabled
-- **Styling**: TailwindCSS v4 with CSS custom properties
-- **UI Components**: shadcn/ui (New York style) with Lucide icons
-- **Authentication**: Clerk with middleware protection
-- **Database**: Supabase with third-party auth integration
-- **AI Integration**: Vercel AI SDK with support for Anthropic Claude and OpenAI
-- **Theme System**: next-themes with dark mode support
+## Commands
 
-## Project Structure
+- `npm run dev` — start dev server
+- `npm run build` — production build
+- `npm run lint` — ESLint
+- `npm run typecheck` — `tsc --noEmit`
+
+Keep this section updated as scripts are added. Run lint + typecheck before declaring any task done.
+
+## Security rules (never break)
+
+1. `SUPABASE_SERVICE_ROLE_KEY` exists only on the server. Never import server-only modules into client components. Never log it, return it in API responses, or include it in the JSON export.
+2. RLS is enabled on every table with zero policies (deny-all). All reads/writes go through route handlers or server actions using the service-role client. The anon key is not used for data access in MVP.
+3. Validate uploads server-side: images only (check magic bytes, not just extension), max 10 MB, strip EXIF metadata, normalize filenames.
+4. Parameterized queries only. Never build raw SQL from user input.
+5. Never commit `.env*`. API responses must never contain secrets.
+
+## Product invariants (P0 behavior, from the PRD)
+
+1. Copy always copies the FULL `prompt_text` with line breaks preserved. Card excerpts never affect clipboard content.
+2. Copy flow from cards: fetch full text → write clipboard → POST `/api/prompts/:id/copy-event` fire-and-forget (`usage_count` +1, `last_used_at` updated). Tracking failure must never block or undo the copy. Clipboard failure shows a fallback (modal with selectable full text).
+3. Covers are always 2:3. Fallback order in MVP: uploaded cover → category template → system default. AI-generated covers are NOT part of MVP (ignore the PRD §11 fallback line that mentions them).
+4. Exactly one prompt may have `is_featured = true`, enforced by a partial unique index; setting a new featured un-features the old one in the same transaction. Archived prompts cannot be featured.
+5. Hero selection: featured → most recently used favorite → newest. Never an archived prompt.
+6. Archive hides a prompt from home, hero, and default search, but keeps it restorable under `/archived`. Delete is permanent: prompt + tag relations + custom cover files, after a confirmation modal that shows the prompt title. No restore.
+7. Autosave: debounce 1500 ms after typing stops. Statuses: Unsaved / Saving / Saved / Failed. Manual Save forces an immediate write and returns to read-only mode. On failure: keep editor state, offer Retry, warn before unload. `updated_at` changes only on successful writes.
+8. Tags are case-insensitively unique (unique index on `lower(name)`); empty tags are never stored; tag cleanup never deletes prompts.
+9. Deleting a category sets `prompts.category_id` to NULL (uncategorized) after confirmation. Never cascade delete to prompts.
+10. Home/list queries never select full `prompt_text`; select an excerpt (`left(prompt_text, 240)`). Full text is fetched on detail open or on copy.
+11. Empty category rows are hidden. Rows follow `categories.sort_order`. Archived prompts never appear in Recently Added / Recently Used / Favorites.
+12. JSON export includes schema version, timestamp, all prompts (active AND archived), categories, tags, and safe settings. Never secrets, never binary cover files (paths/metadata only). Filename: `prompt-library-export-YYYY-MM-DD.json`.
+13. Feature flags in `app_settings` (`prompt_variables_enabled`, `ai_features_enabled`) default to false. Build nothing behind them in MVP beyond the flags themselves.
+
+## Database
+
+Schema per PRD §7: `prompts`, `categories`, `tags`, `prompt_tags`, `app_settings` (singleton row, read-or-create). Do NOT create `prompt_artifacts` yet (future phase). Schema changes happen only through migrations in `supabase/migrations/`.
+
+Required constraints/indexes beyond the PRD text:
+
+- `create unique index one_featured_prompt on prompts (is_featured) where is_featured = true;`
+- unique index on `tags (lower(name))`
+- `prompts.category_id references categories(id) on delete set null`
+- `prompt_tags` foreign keys `on delete cascade`
+- check constraint `status in ('active','archived')`
+- `pg_trgm` GIN indexes on `prompts.title`, `prompts.prompt_text`, `prompts.description`
+
+## Search
+
+`ILIKE` + `pg_trgm` across title, prompt_text, description, tags, category name, output_type, ai_model. Case-insensitive, debounced input, archived excluded by default. Do NOT use Postgres full-text search configs: content is mixed Indonesian/English and the English stemmer mangles Indonesian. No embeddings or vector search. Scale target is only 100–1,000 prompts.
+
+## Storage (covers)
+
+Private bucket `prompt-covers`. Paths: `prompts/{prompt_id}/original.{ext}`, `poster.webp` (2:3), `thumbnail.webp`. Generate poster + thumbnail with sharp on the server; do not rely on Supabase image transformations. Serve via signed URLs. On replace/remove/delete, clean up superseded files. `cover_source` ∈ `upload | category_template | system_default` (`ai_generated` reserved, unused in MVP).
+
+## Known gotchas
+
+- iOS Safari clipboard: `navigator.clipboard.writeText` after an `await fetch(...)` can lose the user gesture and fail. Use `ClipboardItem` with a Promise for the text, and always keep the manual-copy fallback. UAT-11 depends on this.
+- `app_settings` must always resolve to exactly one row.
+- Prompt text is plain text: preserve line breaks in storage, in detail view (`white-space: pre-wrap`), and in the clipboard.
+- No version history exists: autosave overwrites the active record. Make save statuses unmissable.
+
+## UI direction (PRD §12–13, Pra-Kickoff §15)
+
+Near-black background with deep emerald/teal tint, mint/cyan accents for primary actions, white serif headlines, sans-serif body/UI, subtle glassmorphism on secondary surfaces only. 2:3 poster cards in horizontal category rows with a hero on top. Every page implements loading / empty / error / success states (PRD §11). Mobile: single column, drawer or bottom nav, 44×44 px touch targets, tap alternatives for hover-only actions. Accessibility: WCAG AA contrast, full keyboard operability, visible focus, alt text on covers, labeled icon buttons, reduced-motion support.
+
+## Build order
+
+Follow PRD §17 milestones strictly, P0 scope only (PRD §16):
+M1 Foundation (scaffold, Supabase, migrations, design tokens, app shell) → M2 Prompt CRUD + autosave → M3 Catalog (hero, cards, category rows, favorites, copy tracking) → M4 Discovery (search, filter, sort, category/tag management) → M5 Media & backup (cover upload, crop, templates, JSON export) → M6 Stabilization (responsive, a11y, performance, error handling, security review, UAT).
+
+Until M5, use generated placeholder covers (deterministic gradient from category + title) so the catalog is usable early.
+
+## Out of scope — do not build, even if it seems easy
+
+Login/auth, multi-user, workspace, roles, sharing, comments, version history, import, marketplace, prompt execution, AI chat, AI assistant features, semantic search, artifact/result storage, Google Drive integration, browser extension, cross-device sync.
+
+## Env vars
 
 ```
-src/
-├── app/                    # Next.js App Router
-│   ├── api/               # API routes
-│   │   └── chat/          # AI chat endpoint
-│   ├── globals.css        # Global styles with dark mode
-│   ├── layout.tsx         # Root layout with providers
-│   └── page.tsx           # Home page with status dashboard
-├── components/
-│   ├── ui/                # shadcn/ui components (40+ components)
-│   ├── chat.tsx           # AI chat interface
-│   ├── setup-guide.tsx    # Configuration guide
-│   ├── theme-provider.tsx # Theme context provider
-│   └── theme-toggle.tsx   # Dark mode toggle components
-├── lib/
-│   ├── utils.ts           # Utility functions (cn, etc.)
-│   ├── supabase.ts        # Supabase client configurations
-│   ├── user.ts            # User utilities using Clerk
-│   └── env-check.ts       # Environment validation
-└── middleware.ts          # Clerk authentication middleware
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=   # server only, never exposed to client
+BASIC_AUTH_USER=             # deployment only
+BASIC_AUTH_PASSWORD=         # deployment only
 ```
 
-## Key Configuration Files
+## Conventions
 
-- **package.json**: Dependencies and scripts
-- **components.json**: shadcn/ui configuration (New York style, neutral colors)
-- **tsconfig.json**: TypeScript configuration with path aliases (`@/`)
-- **.env.example**: Environment variables template
-- **SUPABASE_CLERK_SETUP.md**: Integration setup guide
-
-## Authentication & Database
-
-### Clerk Integration
-- Middleware protects `/dashboard(.*)` and `/profile(.*)` routes
-- Components: `SignInButton`, `SignedIn`, `SignedOut`, `UserButton`
-- User utilities in `src/lib/user.ts` use `currentUser()` from Clerk
-
-### Supabase Integration
-- **Client**: `createSupabaseServerClient()` for server-side with Clerk tokens  
-- **RLS**: Row Level Security uses `auth.jwt() ->> 'sub'` for Clerk user IDs
-- **Example Migration**: `supabase/migrations/001_example_tables_with_rls.sql`
-
-#### Supabase Client Usage Patterns
-
-**Server-side (Recommended for data fetching):**
-```typescript
-import { createSupabaseServerClient } from "@/lib/supabase"
-
-export async function getServerData() {
-  const supabase = await createSupabaseServerClient()
-  
-  const { data, error } = await supabase
-    .from('posts')
-    .select('*')
-    .order('created_at', { ascending: false })
-  
-  if (error) {
-    console.error('Database error:', error)
-    return null
-  }
-  
-  return data
-}
-```
-
-**Client-side (For interactive operations):**
-```typescript
-"use client"
-
-import { supabase } from "@/lib/supabase"
-import { useAuth } from "@clerk/nextjs"
-
-function ClientComponent() {
-  const { getToken } = useAuth()
-
-  const fetchData = async () => {
-    const token = await getToken()
-    
-    // Pass token manually for client-side operations
-    const { data, error } = await supabase
-      .from('posts')
-      .select('*')
-      .auth(token)
-    
-    return data
-  }
-}
-```
-
-## UI & Styling
-
-### TailwindCSS Setup
-- **Version**: TailwindCSS v4 with PostCSS
-- **Custom Properties**: CSS variables for theming
-- **Dark Mode**: Class-based with `next-themes`
-- **Animations**: `tw-animate-css` package included
-
-### shadcn/ui Components
-- **Style**: New York variant
-- **Theme**: Neutral base color with CSS variables
-- **Icons**: Lucide React
-- **Components Available**: 40+ UI components (Button, Card, Dialog, etc.)
-
-### Theme System
-- **Provider**: `ThemeProvider` in layout with system detection
-- **Toggle Components**: `ThemeToggle` (dropdown) and `SimpleThemeToggle` (button)
-- **Persistence**: Automatic theme persistence across sessions
-
-## AI Integration
-
-### Vercel AI SDK
-- **Endpoint**: `/api/chat/route.ts`
-- **Providers**: Anthropic Claude and OpenAI support
-- **Chat Component**: Real-time streaming chat interface
-- **Authentication**: Requires Clerk authentication
-
-## Development Conventions
-
-### File Organization
-- **Components**: Use PascalCase, place in appropriate directories
-- **Utilities**: Place reusable functions in `src/lib/`
-- **Types**: Define alongside components or in dedicated files
-- **API Routes**: Follow Next.js App Router conventions
-
-### Import Patterns
-```typescript
-// Path aliases (configured in tsconfig.json)
-import { Button } from "@/components/ui/button"
-import { getCurrentUser } from "@/lib/user"
-import { supabase } from "@/lib/supabase"
-
-// External libraries
-import { useTheme } from "next-themes"
-import { SignedIn, useAuth } from "@clerk/nextjs"
-```
-
-### Component Patterns
-```typescript
-// Client components (when using hooks/state)
-"use client"
-
-// Server components (default, for data fetching)
-export default async function ServerComponent() {
-  const user = await getCurrentUser()
-  // ...
-}
-```
-
-## Environment Variables
-
-Required for full functionality:
-
-```bash
-# Clerk Authentication
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
-CLERK_SECRET_KEY=sk_test_...
-
-# Supabase Database
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
-
-# AI Integration (optional)
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
-## Common Patterns
-
-### Row Level Security (RLS) Policies
-
-All database tables should use RLS policies that reference Clerk user IDs via `auth.jwt() ->> 'sub'`.
-
-**Basic User-Owned Data Pattern:**
-```sql
--- Enable RLS on table
-ALTER TABLE posts ENABLE ROW LEVEL SECURITY;
-
--- Users can read all posts (public)
-CREATE POLICY "Anyone can read posts" ON posts
-  FOR SELECT USING (true);
-
--- Users can only insert posts as themselves
-CREATE POLICY "Users can insert own posts" ON posts
-  FOR INSERT WITH CHECK (auth.jwt() ->> 'sub' = user_id);
-
--- Users can only update their own posts
-CREATE POLICY "Users can update own posts" ON posts
-  FOR UPDATE USING (auth.jwt() ->> 'sub' = user_id);
-
--- Users can only delete their own posts
-CREATE POLICY "Users can delete own posts" ON posts
-  FOR DELETE USING (auth.jwt() ->> 'sub' = user_id);
-```
-
-**Private Data Pattern:**
-```sql
--- Completely private to each user
-CREATE POLICY "Users can only access own data" ON private_notes
-  FOR ALL USING (auth.jwt() ->> 'sub' = user_id);
-```
-
-**Conditional Visibility Pattern:**
-```sql
--- Public profiles or own profile
-CREATE POLICY "Users can read public profiles or own profile" ON profiles
-  FOR SELECT USING (
-    is_public = true OR auth.jwt() ->> 'sub' = user_id
-  );
-```
-
-**Collaboration Pattern:**
-```sql
--- Owner and collaborators can access
-CREATE POLICY "Owners and collaborators can read" ON collaborations
-  FOR SELECT USING (
-    auth.jwt() ->> 'sub' = owner_id OR 
-    auth.jwt() ->> 'sub' = ANY(collaborators)
-  );
-```
-
-### Database Operations with Supabase
-
-**Complete CRUD Example:**
-```typescript
-import { createSupabaseServerClient } from "@/lib/supabase"
-import { getCurrentUser } from "@/lib/user"
-
-// CREATE - Insert new record
-export async function createPost(title: string, content: string) {
-  const user = await getCurrentUser()
-  if (!user) return null
-  
-  const supabase = await createSupabaseServerClient()
-  
-  const { data, error } = await supabase
-    .from('posts')
-    .insert({
-      title,
-      content,
-      user_id: user.id, // Clerk user ID
-    })
-    .select()
-    .single()
-  
-  if (error) {
-    console.error('Error creating post:', error)
-    return null
-  }
-  
-  return data
-}
-
-// READ - Fetch user's posts
-export async function getUserPosts() {
-  const supabase = await createSupabaseServerClient()
-  
-  const { data, error } = await supabase
-    .from('posts')
-    .select(`
-      id,
-      title,
-      content,
-      created_at,
-      user_id
-    `)
-    .order('created_at', { ascending: false })
-  
-  if (error) {
-    console.error('Error fetching posts:', error)
-    return []
-  }
-  
-  return data
-}
-
-// UPDATE - Modify existing record
-export async function updatePost(postId: string, updates: { title?: string; content?: string }) {
-  const supabase = await createSupabaseServerClient()
-  
-  const { data, error } = await supabase
-    .from('posts')
-    .update(updates)
-    .eq('id', postId)
-    .select()
-    .single()
-  
-  if (error) {
-    console.error('Error updating post:', error)
-    return null
-  }
-  
-  return data
-}
-
-// DELETE - Remove record
-export async function deletePost(postId: string) {
-  const supabase = await createSupabaseServerClient()
-  
-  const { error } = await supabase
-    .from('posts')
-    .delete()
-    .eq('id', postId)
-  
-  if (error) {
-    console.error('Error deleting post:', error)
-    return false
-  }
-  
-  return true
-}
-```
-
-**Real-time Subscriptions:**
-```typescript
-"use client"
-
-import { useEffect, useState } from "react"
-import { supabase } from "@/lib/supabase"
-import { useAuth } from "@clerk/nextjs"
-
-function useRealtimePosts() {
-  const [posts, setPosts] = useState([])
-  const { getToken } = useAuth()
-
-  useEffect(() => {
-    const fetchPosts = async () => {
-      const token = await getToken()
-      
-      const { data } = await supabase
-        .from('posts')
-        .select('*')
-        .auth(token)
-      
-      setPosts(data || [])
-    }
-
-    fetchPosts()
-
-    // Subscribe to changes
-    const subscription = supabase
-      .channel('posts-channel')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'posts' }, 
-        (payload) => {
-          fetchPosts() // Refetch on any change
-        }
-      )
-      .subscribe()
-
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [getToken])
-
-  return posts
-}
-```
-
-### Protected Routes
-Routes matching `/dashboard(.*)` and `/profile(.*)` are automatically protected by Clerk middleware.
-
-### Theme-Aware Components
-```typescript
-// Automatic dark mode support via CSS custom properties
-<div className="bg-background text-foreground border-border">
-  <Button variant="outline">Themed Button</Button>
-</div>
-```
-
-## Development Commands
-
-```bash
-npm run dev          # Start development server with Turbopack
-npm run build        # Build for production  
-npm run start        # Start production server
-npm run lint         # Run ESLint
-```
-
-## Best Practices
-
-1. **Authentication**: Always check user state with Clerk hooks/utilities
-2. **Database**: Use RLS policies with Clerk user IDs for security
-3. **UI**: Leverage existing shadcn/ui components before creating custom ones
-4. **Styling**: Use TailwindCSS classes and CSS custom properties for theming
-5. **Types**: Maintain strong TypeScript typing throughout
-6. **Performance**: Use server components by default, client components only when needed
-
-## Integration Notes
-
-- **Clerk + Supabase**: Uses modern third-party auth (not deprecated JWT templates)
-- **AI Chat**: Requires authentication and environment variables
-- **Dark Mode**: Automatically applied to all shadcn components
-- **Mobile**: Responsive design with TailwindCSS breakpoints
-
-This starter kit provides a solid foundation for building modern web applications with authentication, database integration, AI capabilities, and polished UI components.
+- TypeScript strict; avoid `any`.
+- Shared Zod schemas are the single source of validation truth (client and server).
+- Small, focused components; colocate by feature under `app/` and `components/`.
+- Conventional commits (`feat:`, `fix:`, `chore:` ...), one logical change per commit.
+- When a requirement is ambiguous, check `docs/PRD.md` first; if still ambiguous, ask the owner instead of guessing.
