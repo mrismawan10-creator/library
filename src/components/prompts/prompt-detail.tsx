@@ -13,10 +13,14 @@ import {
 } from "@/lib/schemas";
 import { apiFetch } from "@/lib/api/client";
 import { useAutosave } from "@/lib/hooks/use-autosave";
+import { useCopyPrompt } from "@/lib/hooks/use-copy-prompt";
 import { Button } from "@/components/ui/button";
+import { Copy } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { PlaceholderCover } from "@/components/covers/placeholder-cover";
+import { CopyFallbackDialog } from "./copy-fallback-dialog";
+import { FavoriteButton } from "./favorite-button";
 import { Field, selectClassName } from "./field";
 import { SaveStatusIndicator } from "./save-status";
 import { PromptActions } from "./prompt-actions";
@@ -32,6 +36,8 @@ export type PromptDetailData = {
   output_type: string;
   ai_model: string | null;
   status: "active" | "archived";
+  is_favorite: boolean;
+  is_featured: boolean;
   usage_count: number;
   last_used_at: string | null;
   created_at: string;
@@ -78,6 +84,7 @@ export function PromptDetail({
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Draft>(() => toDraft(prompt));
+  const { copyPrompt, fallbackText, clearFallback, copyingId } = useCopyPrompt();
 
   const save = useCallback(
     async (value: Draft) => {
@@ -178,10 +185,24 @@ export function PromptDetail({
                 >
                   Edit
                 </Button>
+                <Button
+                  variant="outline"
+                  className="min-h-11"
+                  disabled={copyingId === prompt.id}
+                  onClick={() => void copyPrompt(prompt.id)}
+                >
+                  <Copy aria-hidden className="size-4" />
+                  {copyingId === prompt.id ? "Copying…" : "Copy Prompt"}
+                </Button>
+                <FavoriteButton
+                  promptId={prompt.id}
+                  isFavorite={prompt.is_favorite}
+                />
                 <PromptActions
                   promptId={prompt.id}
                   title={prompt.title}
                   status={prompt.status}
+                  isFeatured={prompt.is_featured}
                 />
               </>
             )}
@@ -319,6 +340,8 @@ export function PromptDetail({
           </>
         )}
       </div>
+
+      <CopyFallbackDialog text={fallbackText} onClose={clearFallback} />
     </div>
   );
 }

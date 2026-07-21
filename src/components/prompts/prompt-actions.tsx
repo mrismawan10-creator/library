@@ -26,10 +26,12 @@ export function PromptActions({
   promptId,
   title,
   status,
+  isFeatured,
 }: {
   promptId: string;
   title: string;
   status: "active" | "archived";
+  isFeatured: boolean;
 }) {
   const router = useRouter();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -72,10 +74,41 @@ export function PromptActions({
     }
   }
 
+  /**
+   * FR-14: only one prompt is featured at a time, and an archived one never is.
+   * The swap itself happens inside a database transaction.
+   */
+  async function toggleFeatured() {
+    setBusy(true);
+    try {
+      await apiFetch(`/api/prompts/${promptId}/feature`, {
+        method: "POST",
+        body: JSON.stringify({ value: !isFeatured }),
+      });
+      toast.success(isFeatured ? "Removed from featured" : "Set as featured");
+      startTransition(() => router.refresh());
+    } catch (error) {
+      reportFailure(error, "Could not update featured.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const disabled = busy || isPending;
 
   return (
     <>
+      {status === "active" ? (
+        <Button
+          variant="outline"
+          className="min-h-11"
+          disabled={disabled}
+          onClick={toggleFeatured}
+        >
+          {isFeatured ? "Unfeature" : "Set as featured"}
+        </Button>
+      ) : null}
+
       <Button
         variant="outline"
         className="min-h-11"

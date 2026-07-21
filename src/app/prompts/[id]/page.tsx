@@ -33,6 +33,8 @@ export default async function PromptDetailPage({
           output_type: prompt.output_type,
           ai_model: prompt.ai_model,
           status: prompt.status,
+          is_favorite: prompt.is_favorite,
+          is_featured: prompt.is_featured,
           usage_count: prompt.usage_count,
           last_used_at: prompt.last_used_at,
           created_at: prompt.created_at,

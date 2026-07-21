@@ -31,6 +31,8 @@ export type PromptWithTags = PromptRow & {
 export type ListPromptsOptions = {
   status?: PromptStatus;
   favoritesOnly?: boolean;
+  /** Category slug, from the catalog See all links. */
+  categorySlug?: string;
   limit?: number;
 };
 
@@ -46,9 +48,31 @@ export type ListPromptsOptions = {
 export async function listPrompts(
   options: ListPromptsOptions = {},
 ): Promise<PromptCard[]> {
-  const { status = "active", favoritesOnly = false, limit = 100 } = options;
+  const {
+    status = "active",
+    favoritesOnly = false,
+    categorySlug,
+    limit = 100,
+  } = options;
 
-  let query = getSupabaseAdmin()
+  const supabase = getSupabaseAdmin();
+
+  // Resolved to an id first: filtering on an embedded column would need an
+  // inner join, and without one PostgREST returns every row with the relation
+  // nulled instead of filtering.
+  let categoryId: string | null = null;
+  if (categorySlug) {
+    const { data, error } = await supabase
+      .from("categories")
+      .select("id")
+      .eq("slug", categorySlug)
+      .maybeSingle();
+    if (error) throw toDataError(error);
+    if (!data) return [];
+    categoryId = (data as { id: string }).id;
+  }
+
+  let query = supabase
     .from("prompts")
     .select(CARD_COLUMNS)
     .eq("status", status)
@@ -56,6 +80,7 @@ export async function listPrompts(
     .limit(limit);
 
   if (favoritesOnly) query = query.eq("is_favorite", true);
+  if (categoryId) query = query.eq("category_id", categoryId);
 
   const { data, error } = await query;
   if (error) throw toDataError(error);
