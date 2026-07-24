@@ -5,6 +5,7 @@ import {
   CONFIDENCE_REVIEW,
   generatedMetadataSchema,
   OUTPUT_TYPES,
+  outputTypeSchema,
   type EnrichedRow,
   type GeneratedMetadata,
 } from "@/lib/schemas";
@@ -47,7 +48,18 @@ Requirements:
 - tags: 3 to 8 short, normalized tags. Avoid overly generic tags like "ai" or "prompt". Do not just repeat the category.
 - variablesEnabled: true if the prompt contains {{placeholder}} style variables, else false.
 - confidence: a number from 0 to 1 for category, outputType, and aiModel.
-- Return valid JSON only. No markdown, no commentary.`;
+- Return valid JSON only. No markdown, no commentary.
+
+Return exactly this JSON shape:
+{
+  "title": "string",
+  "description": "string",
+  "category": { "name": "string", "matchType": "existing", "confidence": 0.9 },
+  "outputType": { "value": "Writing", "confidence": 0.9 },
+  "aiModel": { "value": null, "confidence": 0.9 },
+  "tags": ["tag1", "tag2"],
+  "variablesEnabled": false
+}`;
 
 function buildUserMessage(promptText: string, ctx: EnrichContext): string {
   return JSON.stringify({
@@ -63,6 +75,100 @@ function extractJson(content: string): string {
   const trimmed = content.trim();
   const fence = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
   return fence ? fence[1] : trimmed;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function asConfidence(value: unknown, fallback: number): number {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) && n >= 0 && n <= 1 ? n : fallback;
+}
+
+/**
+ * Coerces a model's raw JSON into the strict metadata shape.
+ *
+ * Different models return different shapes for the same request — some give
+ * `category: "Research"`, others `category: {name, matchType, confidence}`.
+ * This accepts either, so the feature works across the varied models a gateway
+ * like Sumopod or OpenRouter exposes. When a model gives a bare value with no
+ * confidence, we assume reasonable confidence; a model that does report low
+ * confidence is still honoured.
+ */
+function coerceMetadata(
+  raw: unknown,
+  promptText: string,
+  ctx: EnrichContext,
+): GeneratedMetadata {
+  const obj = asRecord(raw);
+  const DEFAULT_CONF = 0.85;
+
+  // category: string or { name, matchType, confidence }
+  const rawCategory = obj.category;
+  let categoryName: string;
+  let categoryConf: number;
+  if (typeof rawCategory === "string") {
+    categoryName = rawCategory;
+    categoryConf = DEFAULT_CONF;
+  } else {
+    const c = asRecord(rawCategory);
+    categoryName = String(c.name ?? obj.categoryName ?? "Uncategorized");
+    categoryConf = asConfidence(c.confidence, DEFAULT_CONF);
+  }
+  const matchType = ctx.categories.some(
+    (name) => name.toLowerCase() === categoryName.trim().toLowerCase(),
+  )
+    ? "existing"
+    : "proposed";
+
+  // outputType: string or { value, confidence }; anything unknown → Other.
+  const rawOutput = obj.outputType;
+  const outputRaw =
+    typeof rawOutput === "string" ? rawOutput : asRecord(rawOutput).value;
+  const outputParsed = outputTypeSchema.safeParse(outputRaw);
+  const outputValue = outputParsed.success ? outputParsed.data : "Other";
+  const outputConf =
+    typeof rawOutput === "string"
+      ? outputParsed.success
+        ? DEFAULT_CONF
+        : 0.3
+      : asConfidence(asRecord(rawOutput).confidence, DEFAULT_CONF);
+
+  // aiModel: string | null or { value, confidence }
+  const rawModel = obj.aiModel;
+  let modelValue: string | null;
+  let modelConf: number;
+  if (typeof rawModel === "string") {
+    modelValue = rawModel.trim() || null;
+    modelConf = DEFAULT_CONF;
+  } else if (rawModel == null) {
+    modelValue = null;
+    modelConf = 1;
+  } else {
+    const m = asRecord(rawModel);
+    modelValue = m.value == null ? null : String(m.value).trim() || null;
+    modelConf = asConfidence(m.confidence, DEFAULT_CONF);
+  }
+
+  const tags = Array.isArray(obj.tags)
+    ? obj.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 12)
+    : [];
+
+  const variablesEnabled =
+    typeof obj.variablesEnabled === "boolean"
+      ? obj.variablesEnabled
+      : /\{\{[^}]+\}\}/.test(promptText);
+
+  return generatedMetadataSchema.parse({
+    title: String(obj.title ?? "").slice(0, 150),
+    description: String(obj.description ?? "").slice(0, 600),
+    category: { name: categoryName, matchType, confidence: categoryConf },
+    outputType: { value: outputValue, confidence: outputConf },
+    aiModel: { value: modelValue, confidence: modelConf },
+    tags,
+    variablesEnabled,
+  });
 }
 
 async function callModel(
@@ -85,7 +191,7 @@ async function callModel(
   if (!content) throw new Error("Empty response from the model.");
 
   const parsed = JSON.parse(extractJson(content));
-  return generatedMetadataSchema.parse(parsed);
+  return coerceMetadata(parsed, promptText, ctx);
 }
 
 async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
@@ -186,7 +292,10 @@ async function enrichOne(
   try {
     const meta = await withRetry(() => callModel(input.promptText, ctx));
     return toEnrichedRow(input, ctx, meta);
-  } catch {
+  } catch (error) {
+    // Log only the error type, not the full error or the prompt (doc §21).
+    const reason = error instanceof Error ? error.name : "unknown";
+    console.error(`[ai.enrich] row ${input.sourceRow} failed: ${reason}`);
     // Never surface a raw provider error — it can carry request detail.
     return errorRow(input, "Metadata generation failed. Retry this row.");
   }
