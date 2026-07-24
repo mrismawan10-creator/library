@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, Inter } from "next/font/google";
 import { AppShell } from "@/components/layout/app-shell";
+import { OfflineIndicator } from "@/components/offline-indicator";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -36,6 +37,7 @@ export default function RootLayout({
         >
           Skip to content
         </a>
+        <OfflineIndicator />
         <AppShell>{children}</AppShell>
         <Toaster />
       </body>
