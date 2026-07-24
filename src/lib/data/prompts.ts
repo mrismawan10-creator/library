@@ -12,6 +12,8 @@ import {
 } from "@/lib/schemas";
 import { NotFoundError, toDataError } from "./errors";
 import { getPromptTags, syncPromptTags } from "./tags";
+import { withCoverUrls, type PromptCardWithCover } from "@/lib/media/resolve";
+import { removeCoverFiles, signCoverUrl } from "@/lib/media/storage";
 
 /**
  * Prompt reads and writes (FR-04, FR-05, FR-06, FR-15, FR-16).
@@ -26,7 +28,30 @@ export type PromptWithTags = PromptRow & {
   tags: TagRow[];
   category_name: string | null;
   category_slug: string | null;
+  /** Resolved cover for the detail hero, following the FR-08 fallback. */
+  poster_url: string | null;
 };
+
+/** Resolves the detail poster through the same fallback the catalog uses. */
+async function resolvePosterUrl(
+  prompt: PromptRow,
+  categoryId: string | null,
+): Promise<string | null> {
+  if (prompt.cover_source === "upload" && prompt.cover_path) {
+    return signCoverUrl(`${prompt.cover_path}/poster.webp`);
+  }
+  if (categoryId) {
+    const { data } = await getSupabaseAdmin()
+      .from("categories")
+      .select("template_cover_path")
+      .eq("id", categoryId)
+      .maybeSingle();
+    const template = (data as { template_cover_path: string | null } | null)
+      ?.template_cover_path;
+    if (template) return signCoverUrl(`${template}/poster.webp`);
+  }
+  return null;
+}
 
 export type ListPromptsOptions = {
   query?: PromptQuery;
@@ -44,7 +69,7 @@ export type ListPromptsOptions = {
  */
 export async function listPrompts(
   options: ListPromptsOptions = {},
-): Promise<PromptCard[]> {
+): Promise<PromptCardWithCover[]> {
   const { query = {}, limit = 100, offset = 0 } = options;
   const supabase = getSupabaseAdmin();
 
@@ -88,7 +113,7 @@ export async function listPrompts(
   });
 
   if (error) throw toDataError(error);
-  return (data ?? []) as PromptCard[];
+  return withCoverUrls((data ?? []) as PromptCard[]);
 }
 
 /** A single prompt with its full text, tags, and category (FR-05). */
@@ -106,11 +131,17 @@ export async function getPrompt(id: string): Promise<PromptWithTags> {
     categories: { name: string; slug: string } | null;
   };
 
+  const [tags, poster_url] = await Promise.all([
+    getPromptTags(id),
+    resolvePosterUrl(prompt as PromptRow, prompt.category_id),
+  ]);
+
   return {
     ...prompt,
-    tags: await getPromptTags(id),
+    tags,
     category_name: categories?.name ?? null,
     category_slug: categories?.slug ?? null,
+    poster_url,
   };
 }
 
@@ -276,7 +307,7 @@ export async function setFeatured(
 
 /**
  * Permanent delete (FR-16). Tag links go with it through the cascade on
- * prompt_tags. Cover files are cleaned up here once upload exists in M5.
+ * prompt_tags; the custom cover files are removed here.
  */
 export async function deletePrompt(id: string): Promise<void> {
   const { data, error } = await getSupabaseAdmin()
@@ -288,4 +319,12 @@ export async function deletePrompt(id: string): Promise<void> {
 
   if (error) throw toDataError(error);
   if (!data) throw new NotFoundError("Prompt not found.");
+
+  // The row is gone; a leftover cover file is now orphaned. Failing to clean it
+  // up should not turn a successful delete into an error, so it is best-effort.
+  try {
+    await removeCoverFiles(id);
+  } catch (cleanupError) {
+    console.error("[data] cover cleanup after delete failed", id, cleanupError);
+  }
 }

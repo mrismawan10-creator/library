@@ -122,6 +122,25 @@ export const promptFormSchema = promptCreateSchema
 
 export type PromptFormValues = z.input<typeof promptFormSchema>;
 
+/**
+ * A card plus its resolved cover URLs. Lives here, not in the media module,
+ * so client components can import the type without dragging in server-only code.
+ * Both URLs are null when the prompt falls back to the generated placeholder.
+ */
+export type PromptCardWithCover = PromptCard & {
+  poster_url: string | null;
+  thumbnail_url: string | null;
+};
+
+/** One horizontal row of the home catalog (FR-01). */
+export type CatalogRow = {
+  key: string;
+  title: string;
+  /** Present for category rows, so "See all" links to the right filter. */
+  categorySlug?: string;
+  prompts: PromptCardWithCover[];
+};
+
 export type PromptRow = z.infer<typeof promptRowSchema>;
 export type PromptCard = z.infer<typeof promptCardSchema>;
 export type PromptCreate = z.infer<typeof promptCreateSchema>;

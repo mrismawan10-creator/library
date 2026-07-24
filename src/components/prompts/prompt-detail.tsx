@@ -18,7 +18,8 @@ import { Button } from "@/components/ui/button";
 import { Copy } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { PlaceholderCover } from "@/components/covers/placeholder-cover";
+import { Cover } from "@/components/covers/cover";
+import { CoverControls } from "./cover-controls";
 import { CopyFallbackDialog } from "./copy-fallback-dialog";
 import { FavoriteButton } from "./favorite-button";
 import { Field, selectClassName } from "./field";
@@ -38,6 +39,8 @@ export type PromptDetailData = {
   status: "active" | "archived";
   is_favorite: boolean;
   is_featured: boolean;
+  cover_source: string | null;
+  poster_url: string | null;
   usage_count: number;
   last_used_at: string | null;
   created_at: string;
@@ -131,11 +134,18 @@ export function PromptDetail({
 
   return (
     <div className="grid gap-8 lg:grid-cols-[220px_minmax(0,1fr)]">
-      <div className="hidden lg:block">
-        <PlaceholderCover
+      <div className="hidden space-y-3 lg:block">
+        <Cover
+          url={prompt.poster_url}
           title={prompt.title}
           categoryName={prompt.category_name}
           categorySlug={prompt.category_slug}
+          priority
+        />
+        <CoverControls
+          promptId={prompt.id}
+          hasCategory={prompt.category_id !== null}
+          coverSource={prompt.cover_source}
         />
       </div>
 

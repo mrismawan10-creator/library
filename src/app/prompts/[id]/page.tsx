@@ -35,6 +35,8 @@ export default async function PromptDetailPage({
           status: prompt.status,
           is_favorite: prompt.is_favorite,
           is_featured: prompt.is_featured,
+          cover_source: prompt.cover_source,
+          poster_url: prompt.poster_url,
           usage_count: prompt.usage_count,
           last_used_at: prompt.last_used_at,
           created_at: prompt.created_at,

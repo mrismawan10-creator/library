@@ -1,9 +1,10 @@
 import "server-only";
 
 import { getSupabaseAdmin } from "@/lib/supabase/server";
-import type { CategoryRow, PromptCard } from "@/lib/schemas";
+import type { CatalogRow, CategoryRow, PromptCardWithCover } from "@/lib/schemas";
 import { toDataError } from "./errors";
 import { CARD_COLUMNS, toCards } from "./cards";
+import { withCoverUrls } from "@/lib/media/resolve";
 
 /**
  * Home catalog queries (FR-01, FR-02).
@@ -16,21 +17,13 @@ import { CARD_COLUMNS, toCards } from "./cards";
 /** Items shown per row before "See all". */
 export const ROW_LIMIT = 12;
 
-export type CatalogRow = {
-  key: string;
-  title: string;
-  /** Present for category rows, so "See all" can link to the right filter. */
-  categorySlug?: string;
-  prompts: PromptCard[];
-};
-
 /**
  * The hero prompt, chosen by the FR-02 fallback: the featured prompt, else the
  * most recently used favorite, else the newest prompt. Archived is excluded at
  * every step, so archiving the featured prompt simply drops it to the next
  * candidate.
  */
-export async function getHeroPrompt(): Promise<PromptCard | null> {
+export async function getHeroPrompt(): Promise<PromptCardWithCover | null> {
   const supabase = getSupabaseAdmin();
 
   const attempts = [
@@ -63,7 +56,7 @@ export async function getHeroPrompt(): Promise<PromptCard | null> {
     const { data, error } = await attempt();
     if (error) throw toDataError(error);
     const rows = toCards(data);
-    if (rows.length > 0) return rows[0];
+    if (rows.length > 0) return (await withCoverUrls(rows))[0];
   }
 
   return null;
@@ -105,40 +98,45 @@ export async function getCatalogRows(): Promise<CatalogRow[]> {
 
   const categories = (categoriesResult.data ?? []) as CategoryRow[];
 
-  const categoryRows = await Promise.all(
+  const categoryData = await Promise.all(
     categories.map(async (category) => {
       const { data, error } = await base()
         .eq("category_id", category.id)
         .order("created_at", { ascending: false })
         .limit(ROW_LIMIT);
       if (error) throw toDataError(error);
-      return {
-        key: `category-${category.slug}`,
-        title: category.name,
-        categorySlug: category.slug,
-        prompts: toCards(data),
-      } satisfies CatalogRow;
+      return { id: category.id, data };
     }),
   );
 
-  const rows: CatalogRow[] = [
-    {
-      key: "recently-added",
-      title: "Recently Added",
-      prompts: toCards(recentlyAdded.data),
-    },
-    {
-      key: "recently-used",
-      title: "Recently Used",
-      prompts: toCards(recentlyUsed.data),
-    },
-    {
-      key: "favorites",
-      title: "Favorites",
-      prompts: toCards(favorites.data),
-    },
-    ...categoryRows,
-  ];
+  const categoryRows = categories.map((category) => ({
+    key: `category-${category.slug}`,
+    title: category.name,
+    categorySlug: category.slug,
+    cards: toCards(
+      categoryData.find((entry) => entry.id === category.id)?.data,
+    ),
+  }));
 
-  return rows.filter((row) => row.prompts.length > 0);
+  const rawRows = [
+    { key: "recently-added", title: "Recently Added", cards: toCards(recentlyAdded.data) },
+    { key: "recently-used", title: "Recently Used", cards: toCards(recentlyUsed.data) },
+    { key: "favorites", title: "Favorites", cards: toCards(favorites.data) },
+    ...categoryRows,
+  ].filter((row) => row.cards.length > 0);
+
+  // Sign every row's covers together so the whole home page costs one signing
+  // call rather than one per row.
+  const enriched = await withCoverUrls(rawRows.flatMap((row) => row.cards));
+  let cursor = 0;
+  return rawRows.map((row) => {
+    const prompts = enriched.slice(cursor, cursor + row.cards.length);
+    cursor += row.cards.length;
+    return {
+      key: row.key,
+      title: row.title,
+      categorySlug: "categorySlug" in row ? row.categorySlug : undefined,
+      prompts,
+    } satisfies CatalogRow;
+  });
 }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import useEmblaCarousel from "embla-carousel-react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import type { PromptCard as PromptCardData } from "@/lib/schemas";
+import type { PromptCardWithCover } from "@/lib/schemas";
 import { PromptCard } from "@/components/prompts/prompt-card";
 
 /**
@@ -21,7 +21,7 @@ export function CategoryRow({
   copyingId,
 }: {
   title: string;
-  prompts: PromptCardData[];
+  prompts: PromptCardWithCover[];
   seeAllHref?: string;
   onCopy: (id: string) => void;
   copyingId: string | null;

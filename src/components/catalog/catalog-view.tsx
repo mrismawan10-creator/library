@@ -1,7 +1,6 @@
 "use client";
 
-import type { PromptCard as PromptCardData } from "@/lib/schemas";
-import type { CatalogRow } from "@/lib/data/catalog";
+import type { CatalogRow, PromptCardWithCover } from "@/lib/schemas";
 import { useCopyPrompt } from "@/lib/hooks/use-copy-prompt";
 import { CopyFallbackDialog } from "@/components/prompts/copy-fallback-dialog";
 import { Hero } from "./hero";
@@ -18,7 +17,7 @@ export function CatalogView({
   hero,
   rows,
 }: {
-  hero: PromptCardData | null;
+  hero: PromptCardWithCover | null;
   rows: CatalogRow[];
 }) {
   const { copyPrompt, fallbackText, clearFallback, copyingId } =

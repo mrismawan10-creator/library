@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { Copy } from "lucide-react";
-import type { PromptCard as PromptCardData } from "@/lib/schemas";
-import { PlaceholderCover } from "@/components/covers/placeholder-cover";
+import { Cover } from "@/components/covers/cover";
+import type { PromptCardWithCover } from "@/lib/schemas";
 import { FavoriteButton } from "@/components/prompts/favorite-button";
 import { Button } from "@/components/ui/button";
 
@@ -16,7 +16,7 @@ export function Hero({
   onCopy,
   isCopying,
 }: {
-  prompt: PromptCardData;
+  prompt: PromptCardWithCover;
   onCopy: (id: string) => void;
   isCopying: boolean;
 }) {
@@ -26,10 +26,12 @@ export function Hero({
       className="surface-glass grid gap-6 rounded-2xl p-6 sm:grid-cols-[160px_minmax(0,1fr)] sm:p-8"
     >
       <Link href={`/prompts/${prompt.id}`} className="block max-w-40">
-        <PlaceholderCover
+        <Cover
+          url={prompt.poster_url}
           title={prompt.title}
           categoryName={prompt.category_name}
           categorySlug={prompt.category_slug}
+          priority
         />
       </Link>
 

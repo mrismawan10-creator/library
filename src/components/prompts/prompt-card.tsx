@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Copy, MoreVertical, Star } from "lucide-react";
 import { toast } from "sonner";
-import type { PromptCard as PromptCardData } from "@/lib/schemas";
 import { apiFetch } from "@/lib/api/client";
-import { PlaceholderCover } from "@/components/covers/placeholder-cover";
+import { Cover } from "@/components/covers/cover";
+import type { PromptCardWithCover } from "@/lib/schemas";
 import { FavoriteButton } from "./favorite-button";
 import {
   DropdownMenu,
@@ -28,7 +28,7 @@ export function PromptCard({
   onCopy,
   isCopying,
 }: {
-  prompt: PromptCardData;
+  prompt: PromptCardWithCover;
   onCopy: (id: string) => void;
   isCopying: boolean;
 }) {
@@ -65,7 +65,8 @@ export function PromptCard({
         href={`/prompts/${prompt.id}`}
         className="block rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2"
       >
-        <PlaceholderCover
+        <Cover
+          url={prompt.thumbnail_url}
           title={prompt.title}
           categoryName={prompt.category_name}
           categorySlug={prompt.category_slug}
