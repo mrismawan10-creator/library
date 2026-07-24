@@ -8,6 +8,8 @@ import {
   type CategoryUpdate,
 } from "@/lib/schemas";
 import { ConflictError, NotFoundError, toDataError } from "./errors";
+import { removeCoverFilesInDir } from "@/lib/media/storage";
+import { categoryDir } from "@/lib/media/resolve";
 
 /** Category management (FR-09). */
 
@@ -150,4 +152,12 @@ export async function deleteCategory(id: string): Promise<void> {
 
   if (error) throw toDataError(error);
   if (!data) throw new NotFoundError("Category not found.");
+
+  // The row is gone; its template files are now orphaned. Best-effort, so a
+  // storage hiccup never turns a successful delete into an error.
+  try {
+    await removeCoverFilesInDir(categoryDir(id));
+  } catch (cleanupError) {
+    console.error("[data] category template cleanup failed", id, cleanupError);
+  }
 }

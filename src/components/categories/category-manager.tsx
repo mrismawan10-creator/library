@@ -6,6 +6,7 @@ import { ArrowDown, ArrowUp, Eye, EyeOff, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError, apiFetch } from "@/lib/api/client";
 import type { CategoryWithCount } from "@/lib/data/categories";
+import { CategoryTemplateControl } from "./category-template-control";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -26,19 +27,20 @@ import {
  * that the order can be changed, and buttons are operable by keyboard and
  * screen reader without a custom drag implementation.
  */
+type CategoryWithTemplate = CategoryWithCount & { template_url: string | null };
+
 export function CategoryManager({
   categories,
 }: {
-  categories: CategoryWithCount[];
+  categories: CategoryWithTemplate[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [newName, setNewName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
-  const [pendingDelete, setPendingDelete] = useState<CategoryWithCount | null>(
-    null,
-  );
+  const [pendingDelete, setPendingDelete] =
+    useState<CategoryWithTemplate | null>(null);
 
   const fail = (error: unknown, fallback: string) =>
     toast.error(error instanceof ApiError ? error.message : fallback);
@@ -161,6 +163,12 @@ export function CategoryManager({
               </>
             ) : (
               <>
+                <CategoryTemplateControl
+                  categoryId={category.id}
+                  categoryName={category.name}
+                  templateUrl={category.template_url}
+                />
+
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{category.name}</p>
                   <p className="text-muted-foreground text-xs">

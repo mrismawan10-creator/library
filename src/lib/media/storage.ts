@@ -17,19 +17,23 @@ export const COVER_BUCKET = "prompt-covers";
 
 const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1 hour
 
-export const coverPaths = (promptId: string) => ({
-  dir: `prompts/${promptId}`,
-  poster: `prompts/${promptId}/poster.webp`,
-  thumbnail: `prompts/${promptId}/thumbnail.webp`,
+const filesIn = (dir: string) => ({
+  poster: `${dir}/poster.webp`,
+  thumbnail: `${dir}/thumbnail.webp`,
 });
 
-/** Stores a processed cover, overwriting any previous poster/thumbnail. */
-export async function uploadCover(
-  promptId: string,
+/**
+ * Stores a processed cover under a directory, overwriting any previous
+ * poster/thumbnail. The directory is `prompts/{id}` for a prompt cover or
+ * `categories/{id}` for a category template — both fixed by us, never from user
+ * input.
+ */
+export async function uploadCoverToDir(
+  dir: string,
   cover: ProcessedCover,
 ): Promise<void> {
   const supabase = getSupabaseAdmin();
-  const paths = coverPaths(promptId);
+  const paths = filesIn(dir);
 
   const results = await Promise.all([
     supabase.storage.from(COVER_BUCKET).upload(paths.poster, cover.poster, {
@@ -49,10 +53,10 @@ export async function uploadCover(
   }
 }
 
-/** Removes every file under a prompt's cover folder. Safe if none exist. */
-export async function removeCoverFiles(promptId: string): Promise<void> {
+/** Removes both cover files under a directory. Safe if none exist. */
+export async function removeCoverFilesInDir(dir: string): Promise<void> {
   const supabase = getSupabaseAdmin();
-  const paths = coverPaths(promptId);
+  const paths = filesIn(dir);
 
   const { error } = await supabase.storage
     .from(COVER_BUCKET)
@@ -63,6 +67,13 @@ export async function removeCoverFiles(promptId: string): Promise<void> {
     throw new DataError("Could not remove the old cover.");
   }
 }
+
+/** Prompt-cover wrappers over the directory helpers. */
+export const uploadCover = (promptId: string, cover: ProcessedCover) =>
+  uploadCoverToDir(`prompts/${promptId}`, cover);
+
+export const removeCoverFiles = (promptId: string) =>
+  removeCoverFilesInDir(`prompts/${promptId}`);
 
 /**
  * A signed URL for a stored object, or null if it cannot be signed (e.g. the
