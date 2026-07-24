@@ -14,6 +14,7 @@ import { NotFoundError, toDataError } from "./errors";
 import { getPromptTags, syncPromptTags } from "./tags";
 import { withCoverUrls, type PromptCardWithCover } from "@/lib/media/resolve";
 import { removeCoverFiles, signCoverUrl } from "@/lib/media/storage";
+import { promptHash } from "@/lib/import/hash";
 
 /**
  * Prompt reads and writes (FR-04, FR-05, FR-06, FR-15, FR-16).
@@ -155,6 +156,7 @@ export async function createPrompt(input: PromptCreate): Promise<PromptRow> {
       // No cover pipeline until M5, so new prompts fall back to the generated
       // placeholder (PRD §11 fallback order).
       cover_source: "system_default",
+      prompt_hash: promptHash(fields.prompt_text),
     })
     .select("*")
     .single();
@@ -180,7 +182,13 @@ export async function updatePrompt(
 
   if (tags !== undefined) await syncPromptTags(id, tags);
 
-  if (Object.keys(fields).length === 0) {
+  // Keep the dedup hash in step whenever the text itself changes.
+  const fieldsWithHash: Record<string, unknown> = { ...fields };
+  if (typeof fields.prompt_text === "string") {
+    fieldsWithHash.prompt_hash = promptHash(fields.prompt_text);
+  }
+
+  if (Object.keys(fieldsWithHash).length === 0) {
     const { data, error } = await getSupabaseAdmin()
       .from("prompts")
       .select("*")
@@ -193,7 +201,7 @@ export async function updatePrompt(
 
   const { data, error } = await getSupabaseAdmin()
     .from("prompts")
-    .update(fields)
+    .update(fieldsWithHash)
     .eq("id", id)
     .select("*")
     .maybeSingle();
