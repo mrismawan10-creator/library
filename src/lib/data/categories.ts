@@ -125,18 +125,14 @@ export async function updateCategory(
   return data as CategoryRow;
 }
 
-/** Applies a new order, given the full list of ids in the order wanted. */
+/**
+ * Applies a new order, given the full list of ids in the order wanted. The
+ * whole reorder happens in one transaction (a Postgres function), so it can
+ * never be left half-applied.
+ */
 export async function reorderCategories(ids: string[]): Promise<CategoryRow[]> {
-  const supabase = getSupabaseAdmin();
-
-  for (const [index, id] of ids.entries()) {
-    const { error } = await supabase
-      .from("categories")
-      .update({ sort_order: index + 1 })
-      .eq("id", id);
-    if (error) throw toDataError(error);
-  }
-
+  const { error } = await getSupabaseAdmin().rpc("reorder_categories", { ids });
+  if (error) throw toDataError(error);
   return listCategories();
 }
 
