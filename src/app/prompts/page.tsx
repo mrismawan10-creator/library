@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { FileUp, LibraryBig, SearchX } from "lucide-react";
+import { FileUp, LibraryBig, SearchX, Sparkles } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
 import { PromptList } from "@/components/prompts/prompt-list";
@@ -51,13 +51,22 @@ export default async function PromptsPage({
             : "Search across titles, prompt text, descriptions, tags, and models."
         }
         action={
-          <Link
-            href="/import"
-            className="border-border text-foreground hover:border-primary/50 inline-flex min-h-11 items-center gap-2 rounded-lg border px-4 text-sm font-medium transition-colors"
-          >
-            <FileUp aria-hidden className="size-4" />
-            Import Excel
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/image-to-prompt"
+              className="border-border text-foreground hover:border-primary/50 inline-flex min-h-11 items-center gap-2 rounded-lg border px-4 text-sm font-medium transition-colors"
+            >
+              <Sparkles aria-hidden className="size-4" />
+              Image to Prompt
+            </Link>
+            <Link
+              href="/import"
+              className="border-border text-foreground hover:border-primary/50 inline-flex min-h-11 items-center gap-2 rounded-lg border px-4 text-sm font-medium transition-colors"
+            >
+              <FileUp aria-hidden className="size-4" />
+              Import Excel
+            </Link>
+          </div>
         }
       />
 

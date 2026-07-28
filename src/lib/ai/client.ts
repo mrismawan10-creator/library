@@ -16,6 +16,15 @@ import OpenAI from "openai";
 
 export const AI_MODEL = process.env.AI_MODEL ?? "openai/gpt-4o-mini";
 
+/**
+ * Model used for image understanding (image-to-prompt). Defaults to the text
+ * model, which for gpt-4o-mini is already vision-capable; set AI_VISION_MODEL
+ * to point at a stronger vision model (e.g. gpt-4o) without touching the text
+ * enrichment model.
+ */
+export const AI_VISION_MODEL =
+  process.env.AI_VISION_MODEL ?? process.env.AI_MODEL ?? "openai/gpt-4o-mini";
+
 export function isAiConfigured(): boolean {
   return Boolean(process.env.AI_API_KEY);
 }
